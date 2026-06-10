@@ -1,39 +1,39 @@
-# CC Switch + Hermes 配置管理
+# CC Switch + Hermes Provider Configuration
 
-当用户需要配置、排查或修复 CC Switch 与 Hermes Agent 的模型供应商配置时使用此技能。
+Use this skill when the user needs to configure, debug, or fix CC Switch and Hermes Agent model provider settings.
 
-## 架构概览
+## Architecture Overview
 
-CC Switch 是一个跨平台桌面应用（GitHub: farion1231/cc-switch），用于统一管理 AI 编程工具（Claude Code、Codex、Hermes、Gemini CLI 等）的 API 供应商配置。它的核心数据存储和配置联动机制如下：
+CC Switch is a cross-platform desktop application ([GitHub: farion1231/cc-switch](https://github.com/farion1231/cc-switch)) that unifies API provider management for AI coding tools (Claude Code, Codex, Hermes, Gemini CLI, OpenCode, etc.). Key data stores:
 
-- **CC Switch 数据库**：`~/.cc-switch/cc-switch.db`（SQLite），存储所有供应商配置
-- **Hermes 配置文件**：`~/.hermes/config.yaml`，Hermes Agent 实际读取的运行配置
-- **关键联动点**：CC Switch 切换供应商时会写入 config.yaml 的 `model.default`、`model.provider` 和 `custom_providers`
+- **CC Switch database**: `~/.cc-switch/cc-switch.db` (SQLite) — stores all provider configurations
+- **Hermes config file**: `~/.hermes/config.yaml` — runtime config read by Hermes Agent
+- **Critical coupling**: When CC Switch switches a provider, it writes `model.default`, `model.provider`, and `custom_providers` into config.yaml
 
-CC Switch 和 Hermes 共享同一个 config.yaml，在 CC Switch 中删除或修改供应商会直接影响 Hermes 运行。
+CC Switch and Hermes share the same config.yaml. Deleting or modifying providers in CC Switch directly affects Hermes runtime behavior.
 
-## 数据库结构（providers 表）
+## Database Schema (providers table)
 
 ```sql
 CREATE TABLE providers (
     id TEXT NOT NULL,
-    app_type TEXT NOT NULL,         -- 'hermes', 'claude', 'codex', 'openclaw' 等
+    app_type TEXT NOT NULL,         -- 'hermes', 'claude', 'codex', 'openclaw', etc.
     name TEXT NOT NULL,
-    settings_config TEXT NOT NULL,  -- JSON 字符串，核心配置
+    settings_config TEXT NOT NULL,  -- JSON string — core configuration
     website_url TEXT,
     category TEXT,
     created_at INTEGER,
     sort_index INTEGER,
-    meta TEXT NOT NULL DEFAULT '{}', -- JSON，存放 testConfig 等元数据
+    meta TEXT NOT NULL DEFAULT '{}', -- JSON — stores testConfig and other metadata
     is_current BOOLEAN NOT NULL DEFAULT 0,
     ...
     PRIMARY KEY (id, app_type)
 );
 ```
 
-### settings_config 的 Hermes 格式（最关键的坑点）
+### settings_config Format for Hermes (Most Critical Pitfall)
 
-**正确格式**（对象数组）：
+**Correct format** (array of objects):
 
 ```json
 {
@@ -48,7 +48,7 @@ CREATE TABLE providers (
 }
 ```
 
-**错误格式（常见坑）**：
+**Wrong format (common pitfall)**:
 
 ```json
 {
@@ -56,34 +56,34 @@ CREATE TABLE providers (
 }
 ```
 
-简单字符串数组会导致 CC Switch 无法提取 `models[0].id` 作为默认模型，切换供应商时 config.yaml 的 `model.default` 不会更新，保留旧值（通常是 `anthropic/claude-opus-4-8`）。
+A plain string array prevents CC Switch from extracting `models[0].id` as the default model. When switching providers, `model.default` in config.yaml won't update and retains the previous value (typically `anthropic/claude-opus-4-8`).
 
-### models 字段的作用链
+### The models Field Data Flow
 
 ```
-CC Switch DB settings_config.models[0].id
-    ↓ (切换供应商时)
-config.yaml model.default
-    ↓ (Hermes 运行时)
-辅助任务 (title_generation 等) 使用的模型
+CC Switch DB: settings_config.models[0].id
+    ↓ (on provider switch)
+config.yaml: model.default
+    ↓ (at Hermes runtime)
+Auxiliary tasks (title_generation, etc.) use this model
 ```
 
-### api_mode 字段
+### api_mode Field
 
-`api_mode` 指定 API 协议类型，从 v3.14.0 开始必须显式设置（移除了 Auto 模式）：
+`api_mode` specifies the API protocol type. Required since v3.14.0 (Auto mode was removed):
 
-| 值 | 协议 | 适用场景 |
+| Value | Protocol | Use Case |
 |---|---|---|
-| `chat_completions` | OpenAI 兼容 | 大多数中转、OpenRouter、DeepSeek 等 |
-| `anthropic_messages` | Anthropic 原生 | Anthropic 官方端点 |
-| `codex_responses` | OpenAI Responses API | OpenAI 新版端点 |
-| `bedrock_converse` | AWS Bedrock | 健康检查不支持 |
+| `chat_completions` | OpenAI-compatible | Most proxies, OpenRouter, DeepSeek, etc. |
+| `anthropic_messages` | Anthropic native | Anthropic official endpoints |
+| `codex_responses` | OpenAI Responses API | OpenAI newer endpoints |
+| `bedrock_converse` | AWS Bedrock | Health check not supported |
 
-缺少 `api_mode` 会导致 stream check 报错："Hermes 供应商缺少 api_mode 字段"。
+Missing `api_mode` causes stream check error: "Hermes provider is missing the 'api_mode' field".
 
-### meta 字段（测试模型配置）
+### meta Field (Test Model Configuration)
 
-CC Switch 对 Hermes 供应商的默认健康检查测试模型是硬编码的 `gpt-4o`。如果供应商不提供 `gpt-4o`（比如 sensenova、agnes-ai），健康检查会返回 404。通过 `meta.testConfig` 覆盖：
+CC Switch hardcodes `gpt-4o` as the default health check test model for Hermes providers. If a provider doesn't serve `gpt-4o` (e.g., sensenova, agnes-ai), health checks return 404. Override via `meta.testConfig`:
 
 ```json
 {
@@ -94,19 +94,19 @@ CC Switch 对 Hermes 供应商的默认健康检查测试模型是硬编码的 `
 }
 ```
 
-## Hermes config.yaml 结构要点
+## Hermes config.yaml Key Sections
 
-### 顶层模型配置
+### Top-Level Model Configuration
 
 ```yaml
 model:
-  default: agnes-2.0-flash        # 当前默认模型 ID
-  provider: agnes-ai-hermes       # 当前供应商 name
+  default: agnes-2.0-flash        # Current default model ID
+  provider: agnes-ai-hermes       # Current provider name
 ```
 
-CC Switch 切换供应商时，`default` 取自 `settings_config.models[0].id`，`provider` 取自 `settings_config.name`。
+When CC Switch switches providers: `default` is taken from `settings_config.models[0].id`, `provider` from `settings_config.name`.
 
-### custom_providers（Hermes 专有供应商）
+### custom_providers (Hermes-Specific Providers)
 
 ```yaml
 custom_providers:
@@ -125,64 +125,64 @@ custom_providers:
     agnes-2.0-flash: {}
 ```
 
-注意 config.yaml 中 `models` 是 YAML dict 格式（键为模型 ID），与数据库中的对象数组格式不同。CC Switch 写入时会自动转换。
+Note: In config.yaml, `models` uses YAML dict format (keyed by model ID), different from the database's object array format. CC Switch auto-converts when writing.
 
-### auxiliary 辅助任务
+### Auxiliary Tasks
 
 ```yaml
 auxiliary:
   title_generation:
-    provider: auto    # 推荐用 auto，跟随主供应商
+    provider: auto    # Recommended: follows main provider
     model: ''
   compression:
     provider: auto
     model: google/gemini-3-flash-preview
-  # ... 其他类似
+  # ... others follow the same pattern
 ```
 
-**推荐 `provider: auto`**。如果硬编码为某个供应商，当用户切换主供应商后，辅助任务仍用旧供应商的模型，但 `model.default` 已变，会导致 404。
+**Recommended: `provider: auto`**. Hardcoding a specific provider causes 404 errors after switching the main provider — the auxiliary task still uses the old provider's model, but `model.default` has changed.
 
-## 踩坑记录与排查指南
+## Pitfalls & Troubleshooting Guide
 
-### 坑1：models 格式不对导致默认模型不更新
+### Pitfall 1: Wrong models format — default model doesn't update
 
-**现象**：CC Switch 模型列表显示 `anthropic/claude-opus-4-8`，而非供应商自己的模型。
-**原因**：数据库中 `settings_config.models` 是字符串数组 `["model-id"]` 而非对象数组 `[{"id": "model-id", "name": "Name"}]`。CC Switch 从 `models[0].id` 取值，字符串没有 `.id` 属性，保留了旧值。
-**修复**：将所有 models 转为 `[{"id": "xxx", "name": "Xxx"}]` 格式。
+**Symptom**: CC Switch model list shows `anthropic/claude-opus-4-8` instead of the provider's own models.
+**Cause**: `settings_config.models` is a string array `["model-id"]` instead of an object array `[{"id": "model-id", "name": "Name"}]`. CC Switch reads `models[0].id`; strings don't have `.id`, so the old value persists.
+**Fix**: Convert all models to `[{"id": "xxx", "name": "Xxx"}]` format.
 
-### 坑2：缺少 api_mode 导致健康检查失败
+### Pitfall 2: Missing api_mode — health check fails
 
-**现象**："Hermes 供应商缺少 api_mode 字段"
-**原因**：v3.14.0 之前创建的供应商或旧版 deeplink 导入的配置没有 `api_mode` 字段。
-**修复**：在 `settings_config` 中添加 `"api_mode": "chat_completions"`。
+**Symptom**: "Hermes provider is missing the 'api_mode' field"
+**Cause**: Providers created before v3.14.0 or imported via legacy deeplinks lack the `api_mode` field.
+**Fix**: Add `"api_mode": "chat_completions"` to `settings_config`.
 
-### 坑3：env 格式混入 Hermes 配置
+### Pitfall 3: Claude Code env format in Hermes config
 
-**现象**：Hermes 供应商的 settings_config 是 `{"env": {"ANTHROPIC_AUTH_TOKEN": "..."}}` 格式。
-**原因**：这是 Claude Code 的配置格式，被错误地复制到了 Hermes 供应商。
-**修复**：重写为 Hermes 标准格式（`base_url`、`api_key`、`api_mode`、`models`）。
+**Symptom**: Hermes provider's settings_config is `{"env": {"ANTHROPIC_AUTH_TOKEN": "..."}}` format.
+**Cause**: Claude Code's configuration format was mistakenly copied to a Hermes provider.
+**Fix**: Rewrite to standard Hermes format (`base_url`, `api_key`, `api_mode`, `models`).
 
-### 坑4：辅助任务 provider 硬编码导致切换后 404
+### Pitfall 4: Hardcoded auxiliary provider causes 404 after switch
 
-**现象**："Auxiliary title generation failed: HTTP 404: model is not found"
-**原因**：辅助任务的 `provider` 硬编码为某个供应商（如 sensenova），但主模型已切换到其他供应商的模型（如 agnes-2.0-flash），目标供应商不提供该模型。
-**修复**：所有辅助任务用 `provider: auto`，让它们跟随当前主供应商。
+**Symptom**: "Auxiliary title generation failed: HTTP 404: model is not found"
+**Cause**: An auxiliary task's `provider` was hardcoded to a specific provider (e.g., sensenova), but the main model switched to a different provider's model (e.g., agnes-2.0-flash) that the hardcoded provider doesn't serve.
+**Fix**: Set all auxiliary tasks to `provider: auto` so they follow the current main provider.
 
-### 坑5：测试模型 gpt-4o 不可用
+### Pitfall 5: Default test model gpt-4o unavailable
 
-**现象**："sensenova 测试模型 gpt-4o 不存在或已下架"
-**原因**：CC Switch 对 Hermes 的默认测试模型是硬编码的 `gpt-4o`，但许多供应商不提供此模型。
-**修复**：在 `meta` 中设置 `testConfig.test_model` 为供应商实际支持的模型。
+**Symptom**: "Test model gpt-4o does not exist or has been delisted"
+**Cause**: CC Switch hardcodes `gpt-4o` as the default test model for Hermes, but many providers don't serve it.
+**Fix**: Set `meta.testConfig.test_model` to a model the provider actually supports.
 
-### 坑6：在 CC Switch 删除供应商连带影响 Hermes
+### Pitfall 6: Deleting providers in CC Switch cascades to Hermes
 
-**现象**：删除 CC Switch 供应商后，Hermes 报 "Primary auth failed — switching to fallback"。
-**原因**：CC Switch 和 Hermes 共享 config.yaml，删除操作会清空 `custom_providers`。
-**修复**：操作前备份 config.yaml，删除后检查并恢复必要的 custom_providers。
+**Symptom**: After deleting a CC Switch provider, Hermes reports "Primary auth failed — switching to fallback".
+**Cause**: CC Switch and Hermes share config.yaml. Deletion clears `custom_providers`.
+**Fix**: Back up config.yaml before operations; verify and restore custom_providers after deletion.
 
-## 常用操作命令
+## Common Commands
 
-### 查询所有 Hermes 供应商
+### Query all Hermes providers
 
 ```bash
 sqlite3 ~/.cc-switch/cc-switch.db \
@@ -191,24 +191,24 @@ sqlite3 ~/.cc-switch/cc-switch.db \
    FROM providers WHERE app_type = 'hermes';"
 ```
 
-### 检查 models 格式是否正确
+### Validate models format
 
 ```bash
 python3 -c "
 import sqlite3, json
 conn = sqlite3.connect('$HOME/.cc-switch/cc-switch.db')
 for id, name, cfg in conn.execute(
-    \"SELECT id, name, settings_config FROM providers WHERE app_type = 'hermes'\"\"):
+    \"SELECT id, name, settings_config FROM providers WHERE app_type = 'hermes'\"):
     models = json.loads(cfg).get('models', [])
     ok = models and isinstance(models[0], dict) and 'id' in models[0]
     print(f\"{'OK' if ok else 'BAD'} {name}: {models[0] if models else 'empty'}\")
 "
 ```
 
-### 批量修复 models 格式
+### Batch-fix models format
 
 ```python
-import sqlite3, json
+import sqlite3, json, os
 conn = sqlite3.connect(os.path.expanduser("~/.cc-switch/cc-switch.db"))
 for pid, pname, cfg_str in conn.execute(
     "SELECT id, name, settings_config FROM providers WHERE app_type = 'hermes'"):
@@ -222,18 +222,18 @@ for pid, pname, cfg_str in conn.execute(
 conn.commit()
 ```
 
-### 备份配置
+### Backup before changes
 
 ```bash
 cp ~/.cc-switch/cc-switch.db ~/.cc-switch/cc-switch.db.bak
 cp ~/.hermes/config.yaml ~/.hermes/config.yaml.bak
 ```
 
-## 相关资源
+## Related Resources
 
 - GitHub: https://github.com/farion1231/cc-switch
-- 源码关键路径：
-  - `src-tauri/src/hermes_config.rs` — Hermes 配置读写、models 转换
-  - `src-tauri/src/services/stream_check.rs` — 健康检查、api_mode 校验
-  - `src/components/providers/forms/HermesFormFields.tsx` — 前端表单
-  - `src/config/hermesProviderPresets.ts` — 预设、HermesApiMode 类型定义
+- Key source paths:
+  - `src-tauri/src/hermes_config.rs` — Hermes config read/write, models conversion
+  - `src-tauri/src/services/stream_check.rs` — Health check, api_mode validation
+  - `src/components/providers/forms/HermesFormFields.tsx` — Frontend form
+  - `src/config/hermesProviderPresets.ts` — Presets, HermesApiMode type definition
